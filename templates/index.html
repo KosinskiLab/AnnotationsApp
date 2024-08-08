@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Protein Domain Annotation</title>
+    <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vega-lite@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f4f4f9;
+        }
+        .container {
+            max-width: 600px;
+            margin-top: 50px;
+        }
+        h1 {
+            color: #4a90e2;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group label {
+            color: #555;
+        }
+        .btn-primary {
+            background-color: #b22222; /* brick red */
+            border-color: #b22222;
+        }
+        .btn-primary:hover {
+            background-color: #8b0000; /* darker brick red */
+            border-color: #8b0000;
+        }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    .loading-spinner {
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #555;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        animation: spin 1s linear infinite;
+    }
+    /* The Modal (background) */
+    .modal {
+        display: none; /* Hidden by default */
+        position: fixed; /* Stay in place */
+        z-index: 1; /* Sit on top */
+        left: 0;
+        top: 0;
+        width: 100%; /* Full width */
+        height: 100%; /* Full height */
+        overflow: auto; /* Enable scroll if needed */
+        background-color: rgb(0,0,0); /* Fallback color */
+        background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+    }
+
+    /* Modal Content */
+    .modal-content {
+        background-color: #fefefe;
+        margin: 15% auto; /* 15% from the top and centered */
+        padding: 20px;
+        border: 1px solid #888;
+        width: 80%; /* Could be more or less, depending on screen size */
+    }
+
+    /* The Close Button */
+    .close {
+        color: #aaa;
+        float: right;
+        font-size: 28px;
+        font-weight: bold;
+    }
+
+    .close:hover,
+    .close:focus {
+        color: black;
+        text-decoration: none;
+        cursor: pointer;
+    }
+
+    </style>
+
+
+</head>
+<body>
+    <div class="container">
+        <h1>Protein Domain Annotation</h1>
+        <form action="/annotate" method="post" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="protein_ids">Enter Uniprot IDs (one per line):</label>
+                <textarea class="form-control" id="protein_ids" name="protein_ids" rows="4"></textarea>
+            </div>
+            <div class="form-group">
+                <label>Select annotation databases:</label>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" value="InterPro" id="interProCheckbox" name="annotationDatabases" checked>
+                    <label class="form-check-label" for="interProCheckbox">
+                        InterPro
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" value="UniProt" id="uniProtCheckbox" name="annotationDatabases" checked>
+                    <label class="form-check-label" for="uniProtCheckbox">
+                        UniProt
+                    </label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="annotations_file">Upload Previously Saved Annotations <a href="https://crosslinkviewer.org/annotationCSV.php">(XiNET format)</a>:</label>
+                <input type="file" class="form-control-file" id="annotations_file" name="annotations_file">
+            </div>
+            <div class="form-group">
+                <label for="custom_annotations_file">Upload Custom Annotations <a href="https://crosslinkviewer.org/annotationCSV.php">(XiNET format)</a>:</label>
+                <input type="file" class="form-control-file" id="custom_annotations_file" name="custom_annotations_file">
+            </div>
+            <div class="form-group">
+                <label for="saved_session_file">Upload Save Session:</label>
+                <input type="file" class="form-control-file" id="saved_session_file" name="saved_session_file">
+            </div>            
+            <button type="submit" class="btn btn-primary" id="submitBtn">Annotate</button>
+        </form>
+    </div>
+    <!-- Error Modal -->
+    <div id="errorModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <p id="errorMessage">Some text in the Modal..</p>
+        </div>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+        document.querySelector('form').addEventListener('submit', function(e) {
+            var savedSessionFile = document.getElementById('saved_session_file').files.length;
+            var proteinIds = document.getElementById('protein_ids').value.trim();
+            var annotationsFile = document.getElementById('annotations_file').files.length;
+            var customAnnotationsFile = document.getElementById('custom_annotations_file').files.length;
+
+            // Check if session file is uploaded and other fields are not empty
+            if (savedSessionFile > 0 && (proteinIds !== '' || annotationsFile > 0 )) {
+                e.preventDefault(); // Prevent form submission
+                // Show modal instead of alert
+                document.getElementById('errorMessage').innerText = 'Error: If a session file is uploaded, UniProt ids field and Upload Previously Saved Annotations field must be empty.';
+                document.getElementById('errorModal').style.display = 'block';
+                return false;
+            }
+
+            var submitBtn = document.getElementById('submitBtn');
+            submitBtn.innerHTML = '<div class="loading-spinner"></div>';
+            submitBtn.disabled = true; // Disable the button to prevent multiple submissions
+        });
+
+        // Close the modal when the user clicks on <span> (x)
+        document.querySelector('.close').addEventListener('click', function() {
+            document.getElementById('errorModal').style.display = "none";
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Select your domains!</title>
+    <script src="https://d3js.org/d3.v6.min.js"></script>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f4f4f9;
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        h1, h2 {
+            color: #4a90e2;
+            text-align: center;
+        }
+        #vis {
+            margin: 0 auto;
+            max-width: 100%;
+            overflow-x: auto;
+            padding-top: 50px; /* Padding to prevent overlap with fixed buttons */
+        }
+        .protein-bar {
+            fill: lightgray;
+            stroke: #ccc;
+            stroke-width: 1;
+            rx: 5;
+            ry: 5;
+        }
+        .domain-rect {
+            cursor: pointer;
+            stroke: #333;
+            stroke-width: 0.5;
+            rx: 5;
+            ry: 5;
+            transition: fill 0.2s ease, stroke-width 0.2s ease;
+        }
+        .domain-rect-selected {
+            stroke-width: 3; 
+        }
+        .domain-rect:hover {
+            fill: darkgray;
+            stroke-width: 5;
+        }
+        .hidden {
+            display: none;
+        }
+        .protein-name {
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .protein-name-background {
+            fill: yellow;
+        }
+        .protein-link {
+            font-size: 10px;
+            text-decoration: underline;
+            color: #4a90e2;
+            display: block;
+        }
+        .domain-label {
+            font-size: 10px;
+            fill: black;
+            pointer-events: none;
+        }
+        .tooltip {
+            position: absolute;
+            text-align: center;
+            width: auto;
+            height: auto;
+            padding: 5px;
+            font: 12px sans-serif;
+            background: lightgray;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            pointer-events: none;
+            opacity: 0.9;
+        }
+        #custom-domain-list {
+            margin-top: 30px;
+            text-align: center;
+        }
+        #domain-list {
+            display: none;
+        }
+        #button-container {
+            text-align: center;
+            margin-top: 20px;
+        }
+        #fixed-buttons {
+            position: relative;
+            width: 100%;
+            text-align: center;
+            transition: all 0.3s;
+        }
+        #fixed-buttons.fixed {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background-color: #f4f4f9;
+            padding: 10px 0;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+        }
+        #fixed-buttons button {
+            display: inline-block;
+            margin: 10px;
+            background-color: #b22222; /* brick red */
+            border-color: #b22222;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 4px;
+        }
+        #fixed-buttons button:hover {
+            background-color: #8b0000; /* darker brick red */
+            border-color: #8b0000;
+        }
+        #toggle-unselected {
+            background-color: #4a90e2; /* blue */
+            border-color: #4a90e2;
+        }
+        #toggle-unselected:hover {
+            background-color: #357ab8; /* darker blue */
+            border-color: #357ab8;
+        }
+        ul {
+            list-style-type: none;
+            padding: 0;
+        }
+        li {
+            background: #fff;
+            margin: 5px 0;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Select your domains!</h1>
+    <div class="help-message">
+        <h2>How to Use This Page</h2>
+        <p>Welcome to the domain selection tool! Here's how to get started:</p>
+        <ul>
+            <li><strong>Selecting/Unselecting Domains:</strong> To select a domain, simply click on it in the list. Click again to unselect. Selected domains will be highlighted with a black stroke around them. They will be downloaded with Download List and saved in saved sessions.</li>
+            <li><strong>Downloading Your List:</strong> Once you've selected the domains you're interested in, click the "Download List" button. This will download a file containing all selected domains to your computer. The list will be in <a href="https://crosslinkviewer.org/annotationCSV.php">(XiNET format)</a></li>
+            <li><strong>Saving Your Session:</strong> If you wish to save your current session to continue later, click the "Save Session" button. This will save all domains and the selected list in a JSON file so you can come back to them anytime.</li>
+            <li><strong>Reopening a Saved Session:</strong> To reopen a saved session, simply revisit the <a href="/">Start Page</a> and upload the save JSON session file. Your previously selected domains will be automatically reselected, allowing you to pick up right where you left off.</li>
+        </ul>
+    </div>   
+    <div id="button-container">
+        <div id="fixed-buttons">
+            <button id="download-list">Download List</button>
+            <button id="save-session">Save Session</button>
+            <button id="toggle-unselected">Toggle Unselected Domains</button>
+        </div>
+    </div>
+    <div id="custom-domain-list">
+        <ul id="domain-list"></ul>
+    </div>
+    <div id="vis"></div>
+    <script>
+        var proteinData = {{ protein_data | tojson }};
+        var customAnnotations = {{ custom_annotations | tojson }};
+        var customDomains = {{ prior_annotations | tojson }};
+        var highlightedProteins = [];
+        
+        customDomains.forEach(function(domainData) {
+            addToCustomList(domainData);
+        });
+
+        var margin = {top: 20, right: 20, bottom: 20, left: 150}; // Increased left margin to fit protein names
+
+        // Determine the maximum protein length
+        var maxProteinLength = d3.max(proteinData, function(d) {
+            return d.length;
+        });
+
+        var annotationHeight = 10;
+
+        var svgWidth = maxProteinLength + margin.left + margin.right;
+        var rowSpacing = 300; // TODO: Adjust row spacing as needed 
+        var svgHeight = proteinData.length * rowSpacing + margin.top + margin.bottom; // Adjusted height calculation for better spacing
+        var svg = d3.select("#vis")
+                    .append("svg")
+                    .attr("width", svgWidth)
+                    .attr("height", svgHeight)
+                    .append("g")
+                    .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+        var tooltip = d3.select("body").append("div")
+                        .attr("class", "tooltip");
+
+        class ProteinBar {
+            constructor(svg, protein, rowSpacing, annotationHeight) {
+                this.svg = svg;
+                this.protein = protein;
+                this.rowSpacing = rowSpacing;
+                this.annotationHeight = annotationHeight;
+                this.annotationsLastYs = [];
+                this.linesYs = [];
+                this.proteinGroup = this.svg.append("g")
+                .attr("transform", "translate(0," + protein.index * rowSpacing + ")");
+            }
+            render() {   
+                this.renderProteinText();
+                this.renderProteinLinks();
+                this.renderAnnotations(this.protein.interpro_annotations);
+                this.renderAnnotations(this.protein.uniprot_annotations);
+                this.renderAnnotations(customAnnotations);
+                this.renderLines();
+                this.renderProteinBar(); //is inserted last because height is calculated based on annotations
+            }
+
+            getProteinBarHeight() {
+                return Math.max(...this.annotationsLastYs) + this.annotationHeight;
+            }
+
+            renderProteinBar() {
+                this.proteinGroup.insert("rect", ":first-child")
+                    .attr("class", "protein-bar")
+                    .attr("x", 0)
+                    .attr("y", 0)
+                    .attr("width", this.protein.length)
+                    .attr("height", this.getProteinBarHeight());
+            }
+            renderProteinText() {
+                const protein = this.protein;
+                this.proteinGroup.append("rect")
+                    .attr("class", "protein-name-background")
+                    .attr("x", -150) // Adjust x to match the protein name text position
+                    .attr("y", -10) // Adjust y to align with the text
+                    .attr("width", 140) // Adjust width to match the text width
+                    .attr("height", 20) // Adjust height to match the text height
+                    .attr("rx", 5) // Rounded corners
+                    .attr("ry", 5) // Rounded corners
+                    .style("fill", "yellow")
+                    .style("display", "none");
+
+                this.proteinGroup.append("text")
+                    .attr("class", "protein-name")
+                    .attr("x", -10)
+                    .attr("y", 0)
+                    .attr("dy", ".35em")
+                    .attr("text-anchor", "end")
+                    .text(`${this.protein.id} | ${this.protein.short_name}`)
+                    .on("click", function(event, d) {
+                        var text = d3.select(this);
+                        var background = d3.select(this.previousSibling);
+                        var isHighlighted = background.style("display") === "block";
+                        background.style("display", isHighlighted ? "none" : "block");
+                        
+                        if (isHighlighted) {
+                            highlightedProteins = highlightedProteins.filter(p => p !== protein.id);
+                        } else {
+                            highlightedProteins.push(protein.id);
+                        }
+                });
+
+            }
+            renderProteinLinks() {
+                this.proteinGroup.append("a")
+                    .attr("xlink:href", `https://www.ebi.ac.uk/interpro/protein/UniProt/${this.protein.id}`)
+                    .attr("target", "_blank")
+                    .append("text")
+                    .attr("class", "protein-link")
+                    .attr("x", -10)
+                    .attr("y", 35)
+                    .attr("dy", ".35em")
+                    .attr("text-anchor", "end")
+                    .text("InterPro");
+
+                this.proteinGroup.append("a")
+                    .attr("xlink:href", `https://www.uniprot.org/uniprot/${this.protein.id}`)
+                    .attr("target", "_blank")
+                    .append("text")
+                    .attr("class", "protein-link")
+                    .attr("x", -10)
+                    .attr("y", 50)
+                    .attr("dy", ".35em")
+                    .attr("text-anchor", "end")
+                    .text("UniProt");
+            }
+            renderAnnotations(annotations) {
+                const occupied = [];
+                const rectYs = [];
+                const y = this.annotationsLastYs.length > 0 ? Math.max(...this.annotationsLastYs)+this.annotationHeight : 0;
+                annotations.forEach((annotation) => {
+                    // Check if the annotation's protein matches the current protein
+                    if (annotation.proteinId === this.protein.id) {
+                        const rectY = this.findNextAvailableRow(y, annotation, occupied);
+                        this.renderAnnotation(annotation, rectY);
+                        rectYs.push(rectY);
+                    }
+                });
+                // If rectYs is not empty, update the this.annotationsLastYs with max value
+                if (rectYs.length > 0) {
+                    this.annotationsLastYs.push(Math.max(...rectYs));
+                }
+            }
+            renderAnnotation(annotation, rectY) {
+                const rect = this.proteinGroup.append("rect")
+                    .attr("class", "domain-rect")
+                    .attr("x", annotation.start - 1)
+                    .attr("y", rectY)
+                    .attr("width", annotation.end - annotation.start - (annotation.end === annotation.start ? -1 : 1))
+                    .attr("height", this.annotationHeight)
+                    .attr("fill", annotation.color)
+                    .attr("stroke-width", 0.5)
+                    .attr("stroke", "#333")
+                    .attr("rx", 5)
+                    .attr("ry", 5);
+
+                this.renderAnnotationText(annotation, rectY);
+                this.addUserInteraction(rect, annotation);
+            }
+            renderAnnotationText(annotation, rectY) {
+                const margin = 2;
+                const textLength = annotation.name.length * 6; // Approximate text width (6 pixels per character)
+                const availableWidth = Math.max(annotation.end - annotation.start - margin, 0);
+
+                this.proteinGroup.append("text")
+                    .attr("class", "domain-label")
+                    .attr("x", annotation.start + margin)
+                    .attr("y", rectY + 8)
+                    .text(() => {
+                        if (textLength <= availableWidth) {
+                            return annotation.name;
+                        } else {
+                            const charsThatFit = Math.max(Math.floor(availableWidth / 6) - 3, 0);
+                            const newTextLength = charsThatFit * 6;
+                            if (charsThatFit > 0 && availableWidth > 0 && newTextLength <= availableWidth) {
+                                return annotation.name.slice(0, charsThatFit) + "...";
+                            } else {
+                                return "";
+                            }
+                        }
+                    });
+            }
+            addUserInteraction(rect, annotation) {
+                const index = findDomainIndex(this.protein, annotation, customDomains);
+                if (index !== -1) {
+                    markSelected(rect.node(), annotation);
+                }
+
+                rect.on("mouseover", (event) => {
+                    d3.select(rect.node())
+                        .attr("fill", "darkgray")
+                        .attr("stroke-width", 2)
+                        .attr("stroke", annotation.color === "#000000" ? "white" : "black");
+                    tooltip.transition().duration(0).style("opacity", .9);
+                    tooltip.html(annotation.name)
+                        .style("left", `${event.pageX + 5}px`)
+                        .style("top", `${event.pageY - 28}px`);
+                })
+                .on("mouseout", () => {
+                    d3.select(rect.node()).attr("fill", annotation.color);
+                    const index = findDomainIndex(this.protein, annotation, customDomains);
+                    if (index === -1) {
+                        d3.select(rect.node())
+                            .attr("stroke-width", 0.5)
+                            .attr("stroke", "#333");
+                    }
+                    tooltip.transition().duration(0).style("opacity", 0);
+                })
+                .on("click", () => {
+                    const index = findDomainIndex(this.protein, annotation, customDomains);
+                    const domainData = {
+                        proteinId: this.protein.id,
+                        proteinShortName: this.protein.short_name,
+                        name: annotation.name,
+                        start: annotation.start,
+                        end: annotation.end,
+                        color: annotation.color,
+                        source: annotation.source,
+                        sourceId: annotation.sourceId
+                    };
+                    if (index === -1) {
+                        customDomains.push(domainData);
+                        markSelected(rect.node(), annotation);
+                        addToCustomList(domainData);
+                    } else {
+                        customDomains.splice(index, 1);
+                        markUnSelected(rect.node(), annotation);
+                        removeFromCustomList(domainData);
+                    }
+                });
+            }
+            renderLines() {
+                this.annotationsLastYs.forEach((y) => {
+                    if (y + this.annotationHeight !== this.getProteinBarHeight()) {
+                        this.proteinGroup.append("line")
+                            .attr("x1", -2)
+                            .attr("y1", y + this.annotationHeight)
+                            .attr("x2", this.protein.length + 2)
+                            .attr("y2", y + this.annotationHeight)
+                            .attr("stroke", "black")
+                            .attr("stroke-width", 2);
+                    }
+                });
+            }
+            findNextAvailableRow(baseY, annotation, occupied) {
+                for (var i = 0; ; i++) {
+                    var rowY = baseY + i * annotationHeight;
+                    var isOccupied = occupied.some(d => d.rowY === rowY && (
+                        (annotation.start >= d.start && annotation.start <= d.end) ||
+                        (annotation.end >= d.start && annotation.end <= d.end) ||
+                        (annotation.start <= d.start && annotation.end >= d.end)
+                    ));
+                    if (!isOccupied) {
+                        occupied.push({start: annotation.start, end: annotation.end, rowY: rowY});
+                        return rowY;
+                    }
+                }
+            }
+
+        };
+              
+        proteinData.forEach((protein, index) => {
+            protein.index = index;
+            const proteinBar = new ProteinBar(svg, protein, rowSpacing, annotationHeight);
+            proteinBar.render();
+        });
+
+        function findDomainIndex(protein, annotation, customDomains) {
+            return customDomains.findIndex(d => 
+                d.proteinId === protein.id && 
+                d.name === annotation.name && 
+                d.start === annotation.start && 
+                d.end === annotation.end &&
+                d.source === annotation.source &&
+                d.sourceId === annotation.sourceId
+            );
+        }
+        function markSelected(element, annotation) {
+            d3.select(element)
+                .classed("domain-rect-selected", true)
+                .attr("stroke", annotation.color === "#000000" ? "white" : "black");
+        }
+        function markUnSelected(element, annotation) {
+            d3.select(element)
+                .classed("domain-rect-selected", false)
+                .attr("stroke", "#333");
+        }
+
+        function addToCustomList(domainData) {
+            var li = document.createElement("li");
+            li.textContent = `${domainData.proteinId} | ${domainData.name} (${domainData.start}-${domainData.end}) [${domainData.color}]`;
+            li.id = `list-${domainData.proteinId}-${domainData.name}-${domainData.start}-${domainData.end}`;
+            document.getElementById("domain-list").appendChild(li);
+        }
+
+        function removeFromCustomList(domainData) {
+            var li = document.getElementById(`list-${domainData.proteinId}-${domainData.name}-${domainData.start}-${domainData.end}`);
+            if (li) {
+                li.parentNode.removeChild(li);
+            }
+        }
+
+        document.getElementById("download-list").onclick = function() {
+            var element = document.createElement('a');
+            var header = "ProteinId,AnnotName,StartRes,EndRes,Color,Source,SourceId\n";
+            var fileContent = customDomains.map(d => `sp|${d.proteinId}|${d.proteinShortName},"${d.name}",${d.start},${d.end},${d.color},${d.source},${d.sourceId}`).join('\n');
+            var file = new Blob([header + fileContent], {type: 'text/plain;charset=utf-8'});
+            element.href = URL.createObjectURL(file);
+            element.download = 'annotations.csv';
+            document.body.appendChild(element); // Required for this to work in FireFox
+            element.click();
+        };
+
+        document.getElementById("save-session").onclick = function() {
+            var sessionData = {
+                proteinData: proteinData,
+                customAnnotations: customAnnotations,
+                customDomains: customDomains,
+                highlightedProteins: highlightedProteins
+            };
+            var element = document.createElement('a');
+            var file = new Blob([JSON.stringify(sessionData, null, 2)], {type: 'application/json'});
+            element.href = URL.createObjectURL(file);
+            element.download = 'AnnotationsAppSession.json';
+            document.body.appendChild(element); // Required for this to work in FireFox
+            element.click();
+            document.body.removeChild(element); // Clean up
+        };
+
+        document.getElementById("toggle-unselected").onclick = function() {
+            d3.selectAll(".domain-rect")
+                .each(function(d) {
+                    var isSelected = d3.select(this).classed("domain-rect-selected");
+                    if (!isSelected) {
+                        d3.select(this).classed("hidden", !d3.select(this).classed("hidden"));
+                    }
+                });
+            d3.selectAll(".domain-label")
+                .each(function(d) {
+                    var rect = d3.select(this).node().previousSibling;
+                    var isSelected = d3.select(rect).classed("domain-rect-selected");
+                    if (!isSelected) {
+                        d3.select(this).classed("hidden", !d3.select(this).classed("hidden"));
+                    }
+                });
+        };
+
+        window.onscroll = function() {
+            var fixedButtons = document.getElementById("fixed-buttons");
+            var helpMessage = document.querySelector(".help-message");
+            var helpMessageBottom = helpMessage.getBoundingClientRect().bottom;
+            if (helpMessageBottom < 20) {
+                fixedButtons.classList.add("fixed");
+            } else {
+                fixedButtons.classList.remove("fixed");
+            }
+        };
+    </script>
+</body>
+</html>
