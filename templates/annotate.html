@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Select your domains!</title>
+    <title>Select your annotations!</title>
     <script src="https://d3js.org/d3.v6.min.js"></script>
     <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
     <style>
@@ -28,7 +28,7 @@
             rx: 5;
             ry: 5;
         }
-        .domain-rect {
+        .annotation-rect {
             cursor: pointer;
             stroke: #333;
             stroke-width: 0.5;
@@ -36,10 +36,10 @@
             ry: 5;
             transition: fill 0.2s ease, stroke-width 0.2s ease;
         }
-        .domain-rect-selected {
+        .annotation-rect-selected {
             stroke-width: 3; 
         }
-        .domain-rect:hover {
+        .annotation-rect:hover {
             fill: darkgray;
             stroke-width: 5;
         }
@@ -60,7 +60,7 @@
             color: #4a90e2;
             display: block;
         }
-        .domain-label {
+        .annotation-label {
             font-size: 10px;
             fill: black;
             pointer-events: none;
@@ -78,11 +78,11 @@
             pointer-events: none;
             opacity: 0.9;
         }
-        #custom-domain-list {
+        #saved-annotation-list {
             margin-top: 30px;
             text-align: center;
         }
-        #domain-list {
+        #annotation-list {
             display: none;
         }
         #button-container {
@@ -140,36 +140,36 @@
     </style>
 </head>
 <body>
-    <h1>Select your domains!</h1>
+    <h1>Select your annotations!</h1>
     <div class="help-message">
         <h2>How to Use This Page</h2>
-        <p>Welcome to the domain selection tool! Here's how to get started:</p>
+        <p>Welcome to the annotation selection tool! Here's how to get started:</p>
         <ul>
-            <li><strong>Selecting/Unselecting Domains:</strong> To select a domain, simply click on it in the list. Click again to unselect. Selected domains will be highlighted with a black stroke around them. They will be downloaded with Download List and saved in saved sessions.</li>
-            <li><strong>Downloading Your List:</strong> Once you've selected the domains you're interested in, click the "Download List" button. This will download a file containing all selected domains to your computer. The list will be in <a href="https://crosslinkviewer.org/annotationCSV.php">(XiNET format)</a></li>
-            <li><strong>Saving Your Session:</strong> If you wish to save your current session to continue later, click the "Save Session" button. This will save all domains and the selected list in a JSON file so you can come back to them anytime.</li>
-            <li><strong>Reopening a Saved Session:</strong> To reopen a saved session, simply revisit the <a href="/">Start Page</a> and upload the save JSON session file. Your previously selected domains will be automatically reselected, allowing you to pick up right where you left off.</li>
+            <li><strong>Selecting/Unselecting Annotations:</strong> To select a annotation, simply click on it in the list. Click again to unselect. Selected annotations will be highlighted with a black stroke around them. They will be downloaded with Download List and saved in saved sessions.</li>
+            <li><strong>Downloading Your List:</strong> Once you've selected the annotations you're interested in, click the "Download List" button. This will download a file containing all selected annotations to your computer. The list will be in <a href="https://crosslinkviewer.org/annotationCSV.php">(XiNET format)</a></li>
+            <li><strong>Saving Your Session:</strong> If you wish to save your current session to continue later, click the "Save Session" button. This will save all annotations and the selected list in a JSON file so you can come back to them anytime.</li>
+            <li><strong>Reopening a Saved Session:</strong> To reopen a saved session, simply revisit the <a href="/">Start Page</a> and upload the save JSON session file. Your previously selected annotations will be automatically reselected, allowing you to pick up right where you left off.</li>
         </ul>
     </div>   
     <div id="button-container">
         <div id="fixed-buttons">
             <button id="download-list">Download List</button>
             <button id="save-session">Save Session</button>
-            <button id="toggle-unselected">Toggle Unselected Domains</button>
+            <button id="toggle-unselected">Toggle Unselected Annotations</button>
         </div>
     </div>
-    <div id="custom-domain-list">
-        <ul id="domain-list"></ul>
+    <div id="saved-annotation-list">
+        <ul id="annotation-list"></ul>
     </div>
     <div id="vis"></div>
     <script>
         var proteinData = {{ protein_data | tojson }};
         var customAnnotations = {{ custom_annotations | tojson }};
-        var customDomains = {{ prior_annotations | tojson }};
+        var savedAnnotations = {{ prior_annotations | tojson }};
         var highlightedProteins = [];
         
-        customDomains.forEach(function(domainData) {
-            addToCustomList(domainData);
+        savedAnnotations.forEach(function(annotationData) {
+            addToSavedList(annotationData);
         });
 
         var margin = {top: 20, right: 20, bottom: 20, left: 150}; // Increased left margin to fit protein names
@@ -303,7 +303,7 @@
             }
             renderAnnotation(annotation, rectY) {
                 const rect = this.proteinGroup.append("rect")
-                    .attr("class", "domain-rect")
+                    .attr("class", "annotation-rect")
                     .attr("x", annotation.start - 1)
                     .attr("y", rectY)
                     .attr("width", annotation.end - annotation.start - (annotation.end === annotation.start ? -1 : 1))
@@ -323,7 +323,7 @@
                 const availableWidth = Math.max(annotation.end - annotation.start - margin, 0);
 
                 this.proteinGroup.append("text")
-                    .attr("class", "domain-label")
+                    .attr("class", "annotation-label")
                     .attr("x", annotation.start + margin)
                     .attr("y", rectY + 8)
                     .text(() => {
@@ -341,7 +341,7 @@
                     });
             }
             addUserInteraction(rect, annotation) {
-                const index = findDomainIndex(this.protein, annotation, customDomains);
+                const index = findAnnotationIndex(this.protein, annotation, savedAnnotations);
                 if (index !== -1) {
                     markSelected(rect.node(), annotation);
                 }
@@ -358,7 +358,7 @@
                 })
                 .on("mouseout", () => {
                     d3.select(rect.node()).attr("fill", annotation.color);
-                    const index = findDomainIndex(this.protein, annotation, customDomains);
+                    const index = findAnnotationIndex(this.protein, annotation, savedAnnotations);
                     if (index === -1) {
                         d3.select(rect.node())
                             .attr("stroke-width", 0.5)
@@ -367,8 +367,8 @@
                     tooltip.transition().duration(0).style("opacity", 0);
                 })
                 .on("click", () => {
-                    const index = findDomainIndex(this.protein, annotation, customDomains);
-                    const domainData = {
+                    const index = findAnnotationIndex(this.protein, annotation, savedAnnotations);
+                    const annotationData = {
                         proteinId: this.protein.id,
                         proteinShortName: this.protein.short_name,
                         name: annotation.name,
@@ -379,13 +379,13 @@
                         sourceId: annotation.sourceId
                     };
                     if (index === -1) {
-                        customDomains.push(domainData);
+                        savedAnnotations.push(annotationData);
                         markSelected(rect.node(), annotation);
-                        addToCustomList(domainData);
+                        addToSavedList(annotationData);
                     } else {
-                        customDomains.splice(index, 1);
+                        savedAnnotations.splice(index, 1);
                         markUnSelected(rect.node(), annotation);
-                        removeFromCustomList(domainData);
+                        removeFromSavedList(annotationData);
                     }
                 });
             }
@@ -425,8 +425,8 @@
             proteinBar.render();
         });
 
-        function findDomainIndex(protein, annotation, customDomains) {
-            return customDomains.findIndex(d => 
+        function findAnnotationIndex(protein, annotation, savedAnnotations) {
+            return savedAnnotations.findIndex(d => 
                 d.proteinId === protein.id && 
                 d.name === annotation.name && 
                 d.start === annotation.start && 
@@ -437,24 +437,24 @@
         }
         function markSelected(element, annotation) {
             d3.select(element)
-                .classed("domain-rect-selected", true)
+                .classed("annotation-rect-selected", true)
                 .attr("stroke", annotation.color === "#000000" ? "white" : "black");
         }
         function markUnSelected(element, annotation) {
             d3.select(element)
-                .classed("domain-rect-selected", false)
+                .classed("annotation-rect-selected", false)
                 .attr("stroke", "#333");
         }
 
-        function addToCustomList(domainData) {
+        function addToSavedList(annotationData) {
             var li = document.createElement("li");
-            li.textContent = `${domainData.proteinId} | ${domainData.name} (${domainData.start}-${domainData.end}) [${domainData.color}]`;
-            li.id = `list-${domainData.proteinId}-${domainData.name}-${domainData.start}-${domainData.end}`;
-            document.getElementById("domain-list").appendChild(li);
+            li.textContent = `${annotationData.proteinId} | ${annotationData.name} (${annotationData.start}-${annotationData.end}) [${annotationData.color}]`;
+            li.id = `list-${annotationData.proteinId}-${annotationData.name}-${annotationData.start}-${annotationData.end}`;
+            document.getElementById("annotation-list").appendChild(li);
         }
 
-        function removeFromCustomList(domainData) {
-            var li = document.getElementById(`list-${domainData.proteinId}-${domainData.name}-${domainData.start}-${domainData.end}`);
+        function removeFromSavedList(annotationData) {
+            var li = document.getElementById(`list-${annotationData.proteinId}-${annotationData.name}-${annotationData.start}-${annotationData.end}`);
             if (li) {
                 li.parentNode.removeChild(li);
             }
@@ -463,7 +463,7 @@
         document.getElementById("download-list").onclick = function() {
             var element = document.createElement('a');
             var header = "ProteinId,AnnotName,StartRes,EndRes,Color,Source,SourceId\n";
-            var fileContent = customDomains.map(d => `sp|${d.proteinId}|${d.proteinShortName},"${d.name}",${d.start},${d.end},${d.color},${d.source},${d.sourceId}`).join('\n');
+            var fileContent = savedAnnotations.map(d => `sp|${d.proteinId}|${d.proteinShortName},"${d.name}",${d.start},${d.end},${d.color},${d.source},${d.sourceId}`).join('\n');
             var file = new Blob([header + fileContent], {type: 'text/plain;charset=utf-8'});
             element.href = URL.createObjectURL(file);
             element.download = 'annotations.csv';
@@ -475,7 +475,7 @@
             var sessionData = {
                 proteinData: proteinData,
                 customAnnotations: customAnnotations,
-                customDomains: customDomains,
+                savedAnnotations: savedAnnotations,
                 highlightedProteins: highlightedProteins
             };
             var element = document.createElement('a');
@@ -488,17 +488,17 @@
         };
 
         document.getElementById("toggle-unselected").onclick = function() {
-            d3.selectAll(".domain-rect")
+            d3.selectAll(".annotation-rect")
                 .each(function(d) {
-                    var isSelected = d3.select(this).classed("domain-rect-selected");
+                    var isSelected = d3.select(this).classed("annotation-rect-selected");
                     if (!isSelected) {
                         d3.select(this).classed("hidden", !d3.select(this).classed("hidden"));
                     }
                 });
-            d3.selectAll(".domain-label")
+            d3.selectAll(".annotation-label")
                 .each(function(d) {
                     var rect = d3.select(this).node().previousSibling;
-                    var isSelected = d3.select(rect).classed("domain-rect-selected");
+                    var isSelected = d3.select(rect).classed("annotation-rect-selected");
                     if (!isSelected) {
                         d3.select(this).classed("hidden", !d3.select(this).classed("hidden"));
                     }

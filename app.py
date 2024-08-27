@@ -51,7 +51,7 @@ def annotate():
         session_data = upload_session(request)
         protein_data = session_data.get('proteinData', [])
         custom_annotations = session_data.get('customAnnotations', [])
-        prior_annotations = session_data.get('customDomains', [])
+        prior_annotations = session_data.get('savedAnnotations', [])
 
     else:
         protein_ids = request.form['protein_ids'].split()
