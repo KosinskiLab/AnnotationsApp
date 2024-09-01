@@ -461,15 +461,46 @@
         }
 
         document.getElementById("download-list").onclick = function() {
-            var element = document.createElement('a');
-            var header = "ProteinId,AnnotName,StartRes,EndRes,Color,Source,SourceId\n";
-            var fileContent = savedAnnotations.map(d => `sp|${d.proteinId}|${d.proteinShortName},"${d.name}",${d.start},${d.end},${d.color},${d.source},${d.sourceId}`).join('\n');
-            var file = new Blob([header + fileContent], {type: 'text/plain;charset=utf-8'});
-            element.href = URL.createObjectURL(file);
-            element.download = 'annotations.csv';
-            document.body.appendChild(element); // Required for this to work in FireFox
-            element.click();
-        };
+    // Create a map from protein IDs to their indices in proteinData for sorting
+    var proteinOrderMap = {};
+    proteinData.forEach((protein, index) => {
+        proteinOrderMap[protein.id] = index;
+    });
+
+    // Filter out duplicate annotations
+    var uniqueAnnotations = savedAnnotations.filter((annotation, index, self) =>
+            index === self.findIndex((a) => (
+                a.proteinId === annotation.proteinId &&
+                a.name === annotation.name &&
+                a.start === annotation.start &&
+                a.end === annotation.end &&
+                a.color === annotation.color &&
+                a.source === annotation.source &&
+                a.sourceId === annotation.sourceId
+            ))
+        );
+
+        // Sort uniqueAnnotations first by protein order and then by start residue
+        uniqueAnnotations.sort((a, b) => {
+            const proteinOrderComparison = proteinOrderMap[a.proteinId] - proteinOrderMap[b.proteinId];
+            if (proteinOrderComparison !== 0) {
+                return proteinOrderComparison;
+            }
+            return a.start - b.start;
+        });
+
+        var element = document.createElement('a');
+        var header = "ProteinId,AnnotName,StartRes,EndRes,Color,Source,SourceId\n";
+        var fileContent = uniqueAnnotations.map(d => `sp|${d.proteinId}|${d.proteinShortName},"${d.name}",${d.start},${d.end},${d.color},${d.source},${d.sourceId}`).join('\n');
+        var file = new Blob([header + fileContent], {type: 'text/plain;charset=utf-8'});
+        element.href = URL.createObjectURL(file);
+        element.download = 'annotations.csv';
+        document.body.appendChild(element); // Required for this to work in FireFox
+        element.click();
+        document.body.removeChild(element); // Clean up
+    };
+
+
 
         document.getElementById("save-session").onclick = function() {
             var sessionData = {
